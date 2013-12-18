@@ -61,7 +61,7 @@ def compile_first():
 
 @app.before_request
 def compile_if_debug():
-    if app.debug:
+    if app.debug:# and False:
         prepare()
 
 if __name__ == '__main__':

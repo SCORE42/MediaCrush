@@ -92,7 +92,9 @@ def upload(f, filename):
     h = get_hash(f)
     identifier = to_id(h)
     if "." not in filename:
-        ext = mimetypes.guess_extension(f.content_type) # This not very scientific, but it works
+        #ext = mimetypes.guess_extension(f.content_type) # This not very scientific, but it works
+        # jdiez this was causing errors fix it ;_;
+        ext = 'wav'
     else:
         ext = extension(filename)
 

@@ -49,6 +49,40 @@
         }
     }
 
+    #record {
+        position: absolute;
+        top: 10px;
+        right: 5px;
+        padding: 3px;
+        font-size: 10pt;
+        line-height: 16px;
+        text-indent: -72px;
+        width: 16px;
+        overflow: hidden;
+        z-index: 1000;
+
+        &.active {
+            text-indent: 0;
+            width: auto;
+
+            .button {
+                background: url('/static/stop.png');
+            }
+        }
+
+        .info {
+            position: relative;
+            top: -3px;
+        }
+
+        .button {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            background: url('/static/record.png');
+        }
+    }
+
     #notice {
         text-align: center;
         position: absolute;

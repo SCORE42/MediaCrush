@@ -414,6 +414,16 @@ function dragLeave(e) {
     droparea.className = null;
 }
 
+navigator.getUserMedia = navigator.getUserMedia
+    || navigator.webkitGetUserMedia
+    || navigator.mozGetUserMedia
+    || navigator.msGetUserMedia;
+window.AudioContext = window.AudioContext
+    || window.webkitAudioContext 
+    || window.mozAudioContext 
+    || window.msAudioContext;
+var mediaStream = null;
+var audioContext = null;
 function dropEnable() {
     window.addEventListener('dragenter', dragEnter, false);
     window.addEventListener('dragleave', dragLeave, false);
@@ -433,7 +443,139 @@ function dropEnable() {
     }, false);
     var create = document.getElementById('createAlbum');
     create.addEventListener('click', createAlbum, false);
+    var record = document.getElementById('record');
+    if (navigator.getUserMedia) {
+        audioContext = new AudioContext;
+        record.classList.remove('hidden');
+        record.querySelector('.button').addEventListener('click', checkForAudio, false);
+    }
     setTimeout(handleHistory, 50);
+}
+
+function checkForAudio(e) {
+    e.preventDefault();
+    if (recording) {
+        stopRecording();
+        return;
+    }
+    clearAudioBuffers();
+    document.querySelector('#record').classList.add('active');
+    if (mediaStream !== null) {
+        recording = true;
+    } else {
+        navigator.getUserMedia({ audio: true }, function(stream) {
+            mediaStream = stream;
+            recordUserAudio();
+            recording = true;
+        }, function(error) {
+            document.querySelector('#record .info').textContent = 'An error occured.';
+        });
+    }
+}
+
+var sampleRate = null;
+var buffers = { l: [], r: [], totalLength: 0 };
+var recording = false;
+function recordUserAudio() {
+    var inputPoint = audioContext.createGain();
+    var input = audioContext.createMediaStreamSource(mediaStream);
+    input.connect(inputPoint);
+    
+    var node = inputPoint.context.createScriptProcessor(4096, 2, 2);
+    sampleRate = inputPoint.context.sampleRate;
+    node.onaudioprocess = recordPart;
+    inputPoint.connect(node);
+    node.connect(inputPoint.context.destination);
+
+    var zeroGain = audioContext.createGain();
+    zeroGain.gain.value = 0.0;
+    inputPoint.connect(zeroGain);
+    zeroGain.connect(audioContext.destination);
+}
+
+function clearAudioBuffers() {
+    buffers = { l: [], r: [], totalLength: 0 };
+}
+
+function recordPart(e) {
+    if (!recording) return;
+    var l = e.inputBuffer.getChannelData(0);
+    var r = e.inputBuffer.getChannelData(1);
+    buffers.l.push(l);
+    buffers.r.push(r);
+    buffers.totalLength += l.length;
+}
+
+function stopRecording() {
+    recording = false;
+    document.querySelector('#record .info').textContent = 'Processing...';
+    setTimeout(function() {
+        var l = mergeBuffers(buffers.l, buffers.totalLength);
+        var r = mergeBuffers(buffers.r, buffers.totalLength);
+        var interleaved = interleave(l, r);
+        var wav = encodeWAV(interleaved);
+        var blob = new Blob([wav], { type: 'audio/wav' });
+        blob.name = 'Microphone';
+        handleFiles([ blob ]);
+        document.querySelector('#record .info').textContent = 'Recording...';
+        document.querySelector('#record').classList.remove('active');
+    }, 100);
+}
+
+// A lot of this audio stuff is adapted from https://github.com/mattdiamond/Recorderjs
+function mergeBuffers(buffers, length) {
+    var result = new Float32Array(length);
+    var offset = 0;
+    for (var i = 0; i < buffers.length; i++) {
+        result.set(buffers[i], offset);
+        offset += buffers[i].length;
+    }
+    return result;
+}
+
+function interleave(l, r) {
+    var length = l.length + r.length;
+    var result = new Float32Array(length);
+    var i = 0, ii = 0;
+    while (i < length) {
+        result[i++] = l[ii];
+        result[i++] = r[ii];
+        ii++;
+    }
+    return result;
+}
+
+function writeString(view, offset, string) {
+    for (var i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+    }
+}
+
+function floatTo16BitPCM(output, offset, input) {
+    for (var i = 0; i < input.length; i++, offset+=2) {
+        var s = Math.max(-1, Math.min(1, input[i]));
+        output.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    }
+}
+
+function encodeWAV(samples) {
+    var buffer = new ArrayBuffer(44 + samples.length * 2);
+    var view = new DataView(buffer);
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 32 + samples.length * 2, true);
+    writeString(view, 8, 'WAVE');
+    /* format chunk identifier */ writeString(view, 12, 'fmt ');
+    /* format chunk length */ view.setUint32(16, 16, true);
+    /* sample format (raw) */ view.setUint16(20, 1, true);
+    /* channel count */ view.setUint16(22, 2, true);
+    /* sample rate */ view.setUint32(24, sampleRate, true);
+    /* byte rate (sample rate * block align) */ view.setUint32(28, sampleRate * 4, true);
+    /* block align (channel count * bytes per sample) */ view.setUint16(32, 4, true);
+    /* bits per sample */ view.setUint16(34, 16, true);
+    /* data chunk identifier */ writeString(view, 36, 'data');
+    view.setUint32(40, samples.length * 2, true);
+    floatTo16BitPCM(view, 44, samples);
+    return view;
 }
 
 function forceFocus() {
